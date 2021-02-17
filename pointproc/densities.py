@@ -30,14 +30,14 @@ class PoissonDensity(DensityFunction):
 class GammaDensity(DensityFunction):
     def __init__(self, init=1, bounds=(1e-3, None)):
         def function(intensity, int_intensity_diff, shape):
-            return intensity * gamma.pdf(x=int_intensity_diff, a=shape)
+            return shape*intensity * gamma.pdf(x=shape*int_intensity_diff, a=shape)
             # x1 = shape * intensity / gamma(shape)
             # x2 = (shape * int_intensity_diff) ** (shape - 1)
             # x3 = np.exp(-shape * int_intensity_diff)
             # return x1 * np.nan_to_num(x2) * x3
 
         def integral(int_intensity_diff, shape):
-            return gamma.cdf(a=shape, x=int_intensity_diff)
+            return gamma.cdf(a=shape, x=shape*int_intensity_diff)
             # return gammainc(shape, int_intensity_diff)
 
         super(GammaDensity, self).__init__(function, integral, [init], [bounds])
