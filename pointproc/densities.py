@@ -37,7 +37,7 @@ class GammaDensity(DensityFunction):
             return x1 * np.nan_to_num(x2) * x3
 
         def integral(int_intensity_diff, shape):
-            return gammainc(shape, int_intensity_diff) / gamma(shape)
+            return gammainc(shape, int_intensity_diff)
 
         super(GammaDensity, self).__init__(function, integral, [init], [bounds])
 
