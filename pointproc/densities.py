@@ -26,6 +26,9 @@ class PoissonDensity(DensityFunction):
 
         super(PoissonDensity, self).__init__(function, integral, [], [])
 
+    def average(self, intensity):
+        return 1 / intensity
+
 
 class GammaDensity(DensityFunction):
     def __init__(self, init=1, bounds=(1e-3, None)):
@@ -42,9 +45,12 @@ class GammaDensity(DensityFunction):
 
         super(GammaDensity, self).__init__(function, integral, [init], [bounds])
 
+    def average(self, intensity, shape):
+        return 1 / intensity
+
 
 class InvGaussDensity(DensityFunction):
-    def __init__(self, init=1, bounds=(1e-1, None)):
+    def __init__(self, init=1, bounds=(1e-2, None)):
         def function(intensity, int_intensity_diff, shape):
             return intensity * invgauss.pdf(x=int_intensity_diff, mu=shape)
 
@@ -52,6 +58,9 @@ class InvGaussDensity(DensityFunction):
             return invgauss.cdf(mu=shape, x=int_intensity_diff)
 
         super(InvGaussDensity, self).__init__(function, integral, [init], [bounds])
+
+    def average(self, intensity, shape):
+        return shape / intensity
 
 
 if __name__ == '__main__':

@@ -1,5 +1,6 @@
 from scipy.optimize import minimize, root_scalar
 from scipy.stats import expon
+import numpy as np
 from pointproc.densities import *
 from pointproc.intensities import *
 from pointproc.utils import concatenate
@@ -84,6 +85,7 @@ class RenewalProcess:
             self._intensity_params = min_res.x[self._dnp:]
             self._fitted = True
         else:
+            x = 5
             raise RuntimeError('Optimization did not terminate successfully.')
 
     def loglikelihood(self, events, tot_time):
@@ -215,34 +217,66 @@ class MixedProcess(RenewalProcess):
         return np.concatenate([[proc.intensity.integral(t, *ps)]
                                for proc, ps in zip(self._processes, param_sets)]).T
 
+    def expected_isis(self, times):
+        intensities = self._intensity_func(times, *self._intensity_params)
+        *param_sets, weights = np.split(self._density_params, self._param_sep_d)
+
+        averages = []
+
+        for i, ps, proc in zip(intensities.T, param_sets, self._processes):
+            averages.append(proc.density.average(i, *ps) + self.deadtime)
+
+        return np.array(averages)
+
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import numpy as np
     import pandas as pd
 
-    # events = np.loadtxt(f'../tests/test_data/homogenous_poisson_events_deadtime.txt')[1:]
-    events = pd.read_csv('../../moth data/data/time-scale of SP return to baseline/tungsten/10pg/20o05001.SMR0.txt',
-                         sep='\t')['spike times'].values
-    events = events[events < 900]
+    from scipy.stats import gamma
 
-    bursts = RenewalProcess(InvGaussDensity(), ConstantIntensity(init=50))
-    ibis = RenewalProcess(GammaDensity(), ConstantIntensity(init=0.1))
-    spont = MixedProcess(bursts, ibis, deadtime=0.002)
-    spont.fit(events, 900)
-    print(spont.loglikelihood(events, 900))
+    events = np.loadtxt(f'../tests/test_data/spiketrain_response_5s.txt')[1:]
 
-    bursts = RenewalProcess(InvGaussDensity(), ConstantIntensity(init=50))
-    ibis = RenewalProcess(PoissonDensity(), ConstantIntensity(init=0.1))
-    spont = MixedProcess(bursts, ibis, deadtime=0.002)
-    spont.fit(events, 900)
-    print(spont.loglikelihood(events, 900))
+    bursts = RenewalProcess(InvGaussDensity(), ExponentialDecay(init=[.1, 1])+ConstantIntensity(init=100))
+    ibis = RenewalProcess(PoissonDensity(), ExponentialDecay(init=[.1, 1])+ConstantIntensity(init=10))
+    process = MixedProcess(bursts, ibis, deadtime=0.002)
+    process.fit(events, 5)
 
     fig, ax = plt.subplots()
-    spont.qq_plot(events, ax)
-    ax.set_yscale('log')
-    ax.set_xscale('log')
+    yy = np.diff(events)
+    xx = np.arange(len(yy))
+    ax.scatter(xx, yy)
+
+    expected_bursts, expected_ibis = process.expected_isis(events[:-1])
+    ax.plot(xx, expected_bursts)
+    ax.plot(xx, expected_ibis)
+
     plt.show()
+
+
+    # # events = np.loadtxt(f'../tests/test_data/homogenous_poisson_events_deadtime.txt')[1:]
+    # events = pd.read_csv('../../moth data/data/time-scale of SP return to baseline/tungsten/10pg/20o05001.SMR0.txt',
+    #                      sep='\t')['spike times'].values
+    # events = events[events < 900]
+    #
+    # bursts = RenewalProcess(InvGaussDensity(), ConstantIntensity(init=50))
+    # ibis = RenewalProcess(GammaDensity(), ConstantIntensity(init=0.1))
+    # spont = MixedProcess(bursts, ibis, deadtime=0.002)
+    # spont.fit(events, 900)
+    # print(spont.loglikelihood(events, 900))
+    #
+    # bursts = RenewalProcess(InvGaussDensity(), ConstantIntensity(init=50))
+    # ibis = RenewalProcess(PoissonDensity(), ConstantIntensity(init=0.1))
+    # spont = MixedProcess(bursts, ibis, deadtime=0.002)
+    # spont.fit(events, 900)
+    # print(spont.loglikelihood(events, 900))
+    #
+    # fig, ax = plt.subplots()
+    # spont.qq_plot(events, ax)
+    # ax.set_yscale('log')
+    # ax.set_xscale('log')
+    # plt.show()
 
     # start = time.time()
     #
