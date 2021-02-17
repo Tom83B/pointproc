@@ -70,6 +70,7 @@ class RenewalProcess:
         n_events_factor = np.log(1 - self._density_integral(integrated_intensity[-1], *density_params))
 
         logl = np.log(density).sum() + n_events_factor
+        # print(logl, params)
         return logl
 
     def fit(self, events, tot_time):
@@ -77,7 +78,7 @@ class RenewalProcess:
         x0 = np.array([*self._density_init, *self._intensity_init])
         bounds = [*self._density_bounds, *self._intensity_bounds]
 
-        min_res = minimize(func, x0=x0, bounds=bounds, method='SLSQP')
+        min_res = minimize(func, x0=x0, bounds=bounds, method='L-BFGS-B')
         if min_res.success:
             self._density_params = min_res.x[:self._dnp]
             self._intensity_params = min_res.x[self._dnp:]
@@ -213,15 +214,20 @@ class MixedProcess(RenewalProcess):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import numpy as np
-    import time
+    import pandas as pd
 
-    events = np.loadtxt(f'../tests/test_data/homogenous_poisson_events_deadtime.txt')[1:]
+    # events = np.loadtxt(f'../tests/test_data/homogenous_poisson_events_deadtime.txt')[1:]
+    events = pd.read_csv('../../moth data/data/time-scale of SP return to baseline/tungsten/10pg/20o05001.SMR0.txt',
+                         sep='\t')['spike times'].values
+    events = events[events < 900]
 
-    process = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10), deadtime=0.2)
-    process.fit(events, 1000)
+    bursts = RenewalProcess(GammaDensity(), ConstantIntensity(init=50))
+    ibis = RenewalProcess(PoissonDensity(), ConstantIntensity(init=0.1))
+    spont = MixedProcess(bursts, ibis, deadtime=0.002)
+    spont.fit(events, 900)
 
     fig, ax = plt.subplots()
-    process.qq_plot(events, ax)
+    spont.qq_plot(events, ax)
     plt.show()
 
     # start = time.time()
