@@ -19,11 +19,11 @@ class DensityFunction:
 
 class PoissonDensity(DensityFunction):
     def __init__(self):
-        def function(intensity, int_intensity_diff):
+        def function(intensity, int_intensity_diff, loc=0):
             return intensity * np.exp(-int_intensity_diff)
 
         def integral(int_intensity_diff):
-            return np.exp(-int_intensity_diff)
+            return 1-np.exp(-int_intensity_diff)
 
         super(PoissonDensity, self).__init__(function, integral, [], [])
 
@@ -34,7 +34,7 @@ class GammaDensity(DensityFunction):
             x1 = shape * intensity / gamma(shape)
             x2 = (shape * int_intensity_diff) ** (shape - 1)
             x3 = np.exp(-shape * int_intensity_diff)
-            return x1 * x2 * x3
+            return x1 * np.nan_to_num(x2) * x3
 
         def integral(int_intensity_diff, shape):
             return gammainc(shape, int_intensity_diff) / gamma(shape)

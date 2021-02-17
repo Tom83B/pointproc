@@ -3,13 +3,13 @@ from scipy import stats
 import warnings
 
 
-def generate_homogenous_poisson(intensity=1, tott=1000):
+def generate_homogenous_poisson(intensity=1, tott=1000, deadtime=0):
     events = []
     t = 0
 
     while t < tott:
         events.append(t)
-        t += stats.expon.rvs() / intensity
+        t += stats.expon.rvs() / intensity + deadtime
 
     events = np.array(events)
 
@@ -64,16 +64,20 @@ def generate_invgauss_homog(intensity, shape, tott):
 
 if __name__ == '__main__':
     # homogenous_poisson_events = generate_homogenous_poisson(1, 1000)
-    # np.savetxt('data/homogenous_poisson_events.txt', homogenous_poisson_events, delimiter=',')
+    # np.savetxt('test_data/homogenous_poisson_events.txt', homogenous_poisson_events, delimiter=',')
     #
     # def intfunc(t):
     #     return 5 * np.exp(-t/300) + 4
     #
     # inhomogenous_poisson_events = generate_inhomog_poisson(intfunc, 1000)
-    # np.savetxt('data/inhomogenous_poisson_events.txt', inhomogenous_poisson_events, delimiter=',')
-    #
-    # mixed_process_events = generate_mixed_process(1, 50, 0.3, 1000)
-    # np.savetxt('data/mixed_process_events.txt', mixed_process_events, delimiter=',')
+    # np.savetxt('test_data/inhomogenous_poisson_events.txt', inhomogenous_poisson_events, delimiter=',')
 
-    homogenous_invgauss_events = generate_invgauss_homog(10, 0.3, 1000)
-    np.savetxt('data/homogenous_invgauss_events.txt', homogenous_invgauss_events, delimiter=',')
+    # mixed_process_events = generate_mixed_process(1, 50, 0.3, 1000)
+    # np.savetxt('test_data/mixed_process_events.txt', mixed_process_events, delimiter=',')
+
+    # homogenous_invgauss_events = generate_invgauss_homog(10, 0.3, 1000)
+    # np.savetxt('test_data/homogenous_invgauss_events.txt', homogenous_invgauss_events, delimiter=',')
+
+    homogenous_poisson_events = generate_homogenous_poisson(10, 1000, 0.2)
+    np.savetxt('test_data/homogenous_poisson_events_deadtime.txt', homogenous_poisson_events, delimiter=',')
+

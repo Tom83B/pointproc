@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 
 class RenewalProcess:
-    def __init__(self, density, intensity):
+    def __init__(self, density, intensity, deadtime=0):
         self.density = density
         self.intensity = intensity
         self._density_params = None
@@ -18,6 +18,7 @@ class RenewalProcess:
         self._intensity_init = intensity.x0
         self._density_bounds = density.bounds
         self._intensity_bounds = intensity.bounds
+        self.deadtime = deadtime
 
     def _check_fit(self):
         if not self._fitted:
@@ -51,20 +52,32 @@ class RenewalProcess:
 
         events_extended = np.concatenate([[0], events, [tot_time]])
 
-        integrated_intensity = np.diff(self._intensity_integral(events_extended, *intensity_params), axis=0)
+        if self.deadtime == 0:
+            integrated_intensity = np.diff(self._intensity_integral(events_extended, *intensity_params), axis=0)
+        else:
+            interval_starts = events_extended[:-1] + self.deadtime
+            interval_ends = events_extended[1:]
+            interval_starts[-1] = min(interval_starts[-1], interval_ends[-1])
+
+            integral_starts = self._intensity_integral(interval_starts, *intensity_params)
+            integral_ends = self._intensity_integral(interval_ends, *intensity_params)
+
+            integrated_intensity = integral_ends - integral_starts
+
         intensity = self._intensity_func(events, *intensity_params)
         density = self._density_func(intensity, integrated_intensity[:-1], *density_params)
 
         n_events_factor = np.log(1 - self._density_integral(integrated_intensity[-1], *density_params))
 
-        return np.log(density).sum() + n_events_factor
+        logl = np.log(density).sum() + n_events_factor
+        return logl
 
     def fit(self, events, tot_time):
         def func(x): return -self._loglikelihood(events, tot_time, *x)
         x0 = np.array([*self._density_init, *self._intensity_init])
         bounds = [*self._density_bounds, *self._intensity_bounds]
 
-        min_res = minimize(func, x0=x0, bounds=bounds)
+        min_res = minimize(func, x0=x0, bounds=bounds, method='SLSQP')
         if min_res.success:
             self._density_params = min_res.x[:self._dnp]
             self._intensity_params = min_res.x[self._dnp:]
@@ -74,7 +87,17 @@ class RenewalProcess:
 
     def rescale(self, events):
         self._check_fit()
-        integrated_intensity = np.diff(self._intensity_integral(events, *self.intensity_params_), axis=0)
+        if self.deadtime == 0:
+            integrated_intensity = np.diff(self._intensity_integral(events, *self._intensity_params), axis=0)
+        else:
+            interval_starts = events[:-1] + self.deadtime
+            interval_ends = events[1:]
+
+            integral_starts = self._intensity_integral(interval_starts, *self._intensity_params)
+            integral_ends = self._intensity_integral(interval_ends, *self._intensity_params)
+
+            integrated_intensity = integral_ends - integral_starts
+        # integrated_intensity = np.diff(self._intensity_integral(events, *self.intensity_params_), axis=0)
         rescaled_intervals = -np.log(1 - self._density_integral(integrated_intensity, *self.density_params_))
         return rescaled_intervals
 
@@ -139,7 +162,7 @@ class RenewalProcess:
 
 
 class MixedProcess(RenewalProcess):
-    def __init__(self, *processes):
+    def __init__(self, *processes, deadtime=0):
         self._processes = processes
         self.densities = [proc.density for proc in processes]
         self.intensities = [proc.intensity for proc in processes]
@@ -158,6 +181,7 @@ class MixedProcess(RenewalProcess):
         self._param_lens_i = [len(proc.intensity.x0) for proc in processes]
         self._param_sep_i = np.cumsum(self._param_lens_i[:-1])
         self._param_sep_d = np.cumsum(self._param_lens_d)
+        self.deadtime = deadtime
 
     def _density_func(self, intensity, int_intensity_diff, *params):
         *param_sets, weights = np.split(params, self._param_sep_d)
@@ -191,25 +215,34 @@ if __name__ == '__main__':
     import numpy as np
     import time
 
-    start = time.time()
+    events = np.loadtxt(f'../tests/test_data/homogenous_poisson_events_deadtime.txt')[1:]
 
-    events = np.loadtxt('../tests/data/homogenous_invgauss_events.txt', delimiter=',')[1:]
-
-    intensity = ConstantIntensity()
-    density = InvGaussDensity()
-    process = RenewalProcess(density, intensity)
-
+    process = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10), deadtime=0.2)
     process.fit(events, 1000)
-    true_params = np.array([0.3, 10])
-    fitted_params = np.array([*process.density_params_, *process.intensity_params_])
-
-    new_events = process.generate_events(1000)
-
-    end = time.time()
 
     fig, ax = plt.subplots()
-
-    process.qq_plot(new_events, ax)
-    # ax.set_xscale('log')
-    # ax.set_yscale('log')
+    process.qq_plot(events, ax)
     plt.show()
+
+    # start = time.time()
+    #
+    # events = np.loadtxt('../tests/data/homogenous_invgauss_events.txt', delimiter=',')[1:]
+    #
+    # intensity = ConstantIntensity()
+    # density = InvGaussDensity()
+    # process = RenewalProcess(density, intensity)
+    #
+    # process.fit(events, 1000)
+    # true_params = np.array([0.3, 10])
+    # fitted_params = np.array([*process.density_params_, *process.intensity_params_])
+    #
+    # new_events = process.generate_events(1000)
+    #
+    # end = time.time()
+    #
+    # fig, ax = plt.subplots()
+    #
+    # process.qq_plot(new_events, ax)
+    # # ax.set_xscale('log')
+    # # ax.set_yscale('log')
+    # plt.show()

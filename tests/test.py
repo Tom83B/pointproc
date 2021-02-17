@@ -6,6 +6,8 @@ from pointproc.intensities import *
 from pointproc.processes import RenewalProcess, MixedProcess
 
 
+data_folder = 'test_data'
+
 class TestIntensities(unittest.TestCase):
     def test_addition(self):
         intensity1 = ConstantIntensity()
@@ -19,7 +21,7 @@ class TestIntensities(unittest.TestCase):
 
 class TestProcesses(unittest.TestCase):
     def test_homog_poisson_fit(self):
-        events = np.loadtxt('data/homogenous_poisson_events.txt', delimiter=',')
+        events = np.loadtxt(f'{data_folder}/homogenous_poisson_events.txt', delimiter=',')[1:]
 
         intensity = ConstantIntensity(1.5, [0.1, 10])
         density = PoissonDensity()
@@ -31,7 +33,7 @@ class TestProcesses(unittest.TestCase):
         self.assertTrue(process.intensity_params_[0] < 1.1)
 
     def test_inhomog_poisson_fit(self):
-        events = np.loadtxt('data/inhomogenous_poisson_events.txt', delimiter=',')
+        events = np.loadtxt(f'{data_folder}/inhomogenous_poisson_events.txt', delimiter=',')[1:]
 
         intensity = ExponentialDecay() + ConstantIntensity()
         density = PoissonDensity()
@@ -45,7 +47,7 @@ class TestProcesses(unittest.TestCase):
             self.assertTrue(p_fitted < p_true * 1.2)
 
     def test_inhomog_gamma_fit(self):
-        events = np.loadtxt('data/inhomogenous_poisson_events.txt', delimiter=',')
+        events = np.loadtxt(f'{data_folder}/inhomogenous_poisson_events.txt', delimiter=',')[1:]
 
         intensity = ExponentialDecay() + ConstantIntensity()
         density = GammaDensity()
@@ -107,7 +109,7 @@ class TestProcesses(unittest.TestCase):
             self.assertAlmostEqual(d_mix, 0.8*d1 + 0.2*d2)
 
     def test_poisson_mixture_fit(self):
-        events = np.loadtxt('../tests/data/mixed_process_events.txt')[1:]
+        events = np.loadtxt(f'{data_folder}/mixed_process_events.txt')[1:]
 
         process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10))
         process2 = RenewalProcess(GammaDensity(), ConstantIntensity())
@@ -123,7 +125,7 @@ class TestProcesses(unittest.TestCase):
             self.assertTrue(p_fitted < p_true * 1.1)
 
     def test_homog_invgauss_fit(self):
-        events = np.loadtxt('data/homogenous_invgauss_events.txt', delimiter=',')[1:]
+        events = np.loadtxt(f'{data_folder}/homogenous_invgauss_events.txt', delimiter=',')[1:]
 
         intensity = ConstantIntensity()
         density = InvGaussDensity()
@@ -136,6 +138,7 @@ class TestProcesses(unittest.TestCase):
         for p_fitted, p_true in zip(fitted_params, true_params):
             self.assertTrue(p_fitted > p_true * 0.9)
             self.assertTrue(p_fitted < p_true * 1.1)
+
 
 if __name__ == '__main__':
     unittest.main()
