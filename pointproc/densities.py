@@ -30,7 +30,7 @@ class PoissonDensity(DensityFunction):
 class GammaDensity(DensityFunction):
     def __init__(self, init=1, bounds=(1e-3, None)):
         def function(intensity, int_intensity_diff, shape):
-            return intensity * gamma(x=int_intensity_diff, a=shape)
+            return intensity * gamma.pdf(x=int_intensity_diff, a=shape)
             # x1 = shape * intensity / gamma(shape)
             # x2 = (shape * int_intensity_diff) ** (shape - 1)
             # x3 = np.exp(-shape * int_intensity_diff)
