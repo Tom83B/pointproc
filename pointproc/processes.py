@@ -86,6 +86,9 @@ class RenewalProcess:
         else:
             raise RuntimeError('Optimization did not terminate successfully.')
 
+    def loglikelihood(self, events, tot_time):
+        return self._loglikelihood(events, tot_time, *self.density_params_, *self._intensity_params)
+
     def rescale(self, events):
         self._check_fit()
         if self.deadtime == 0:
@@ -160,6 +163,8 @@ class RenewalProcess:
 
         xx = np.linspace(rescaled_intervals.min(), rescaled_intervals.max(), 100)
         ax.plot(xx, xx, **line_params)
+        ax.set_xlabel('empirical quantiles')
+        ax.set_ylabel('theoretical quantiles')
 
 
 class MixedProcess(RenewalProcess):
@@ -221,13 +226,22 @@ if __name__ == '__main__':
                          sep='\t')['spike times'].values
     events = events[events < 900]
 
-    bursts = RenewalProcess(GammaDensity(), ConstantIntensity(init=50))
+    bursts = RenewalProcess(InvGaussDensity(), ConstantIntensity(init=50))
+    ibis = RenewalProcess(GammaDensity(), ConstantIntensity(init=0.1))
+    spont = MixedProcess(bursts, ibis, deadtime=0.002)
+    spont.fit(events, 900)
+    print(spont.loglikelihood(events, 900))
+
+    bursts = RenewalProcess(InvGaussDensity(), ConstantIntensity(init=50))
     ibis = RenewalProcess(PoissonDensity(), ConstantIntensity(init=0.1))
     spont = MixedProcess(bursts, ibis, deadtime=0.002)
     spont.fit(events, 900)
+    print(spont.loglikelihood(events, 900))
 
     fig, ax = plt.subplots()
     spont.qq_plot(events, ax)
+    ax.set_yscale('log')
+    ax.set_xscale('log')
     plt.show()
 
     # start = time.time()
