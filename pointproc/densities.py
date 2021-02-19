@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.stats import gamma, invgauss
+from scipy.stats import gamma, invgauss, expon
 
 
 class DensityFunction:
@@ -34,6 +34,12 @@ class PoissonDensity(DensityFunction):
     def average(self, intensity):
         return 1 / intensity
 
+    def inverse_cdf(self, q):
+        return -np.log(1-q)
+
+    def rvs(self):
+        return expon.rvs()
+
 
 class GammaDensity(DensityFunction):
     def __init__(self, init=1, bounds=(1e-3, None)):
@@ -54,6 +60,9 @@ class GammaDensity(DensityFunction):
     def average(self, intensity, shape):
         return 1 / intensity
 
+    def rvs(self, shape):
+        return gamma.rvs(a=shape) / shape
+
 
 class InvGaussDensity(DensityFunction):
     def __init__(self, init=1, bounds=(1e-2, None)):
@@ -69,6 +78,12 @@ class InvGaussDensity(DensityFunction):
 
     def average(self, intensity, shape):
         return shape / intensity
+
+    def inverse_cdf(self, q, shape):
+        return invgauss.ppf(mu=shape, q=q)
+
+    def rvs(self, shape):
+        return invgauss.rvs(mu=shape)
 
 
 if __name__ == '__main__':

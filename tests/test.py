@@ -9,6 +9,7 @@ from pointproc.processes import RenewalProcess, MixedProcess
 
 data_folder = 'test_data'
 
+
 class TestIntensities(unittest.TestCase):
     def test_addition(self):
         intensity1 = ConstantIntensity()
@@ -25,7 +26,17 @@ class TestIntensities(unittest.TestCase):
         self.assertTupleEqual(expected_param_names, intensity.param_names)
 
 
-class TestProcesses(unittest.TestCase):
+class FitTestCase(unittest.TestCase):
+    def assertEqualWithTolerance(self, a, b, min_factor=0.8, max_factor=1.2):
+        self.assertTrue(a > b * min_factor)
+        self.assertTrue(a < b * max_factor)
+
+    def assertIterablesEqualWithTolerance(self, a, b, min_factor=0.8, max_factor=1.2):
+        for x, y in zip(a, b):
+            self.assertEqualWithTolerance(x, y, min_factor, max_factor)
+
+
+class TestRenewalProcess(FitTestCase):
     def test_homog_poisson_fit(self):
         events = np.loadtxt(f'{data_folder}/homogenous_poisson_events.txt', delimiter=',')[1:]
 
@@ -96,6 +107,68 @@ class TestProcesses(unittest.TestCase):
 
         self.assertAlmostEqual(d_mix, 0.8*d1 + 0.2*d2)
 
+    def test_poisson_mixture_fit(self):
+        events = np.loadtxt(f'{data_folder}/mixed_process_events.txt')[1:]
+
+        process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10))
+        process2 = RenewalProcess(GammaDensity(), ConstantIntensity())
+        process = MixedProcess(process1, process2)
+
+        process.fit(events, 1000)
+
+        fitted_params = np.array([*process.density_params_, *process.intensity_params_])
+        true_params = np.array([1, 0.7 / 0.3, 50, 1])
+
+        self.assertIterablesEqualWithTolerance(fitted_params, true_params)
+
+    def test_homog_invgauss_fit(self):
+        events = np.loadtxt(f'{data_folder}/homogenous_invgauss_events.txt', delimiter=',')[1:]
+
+        intensity = ConstantIntensity(init=15)
+        density = InvGaussDensity(init=0.35)
+        process = RenewalProcess(density, intensity)
+
+        process.fit(events, 1000)
+        true_params = np.array([0.3, 10])
+        fitted_params = np.array([*process.density_params_, *process.intensity_params_])
+
+        self.assertIterablesEqualWithTolerance(fitted_params, true_params)
+
+    def test_generate_invgauss(self):
+        process = RenewalProcess(InvGaussDensity(init=0.3), ConstantIntensity(init=10))
+        process.set_params([0.3], [10])
+        events = process.generate_events(10)
+        process.fit(events, 10)
+
+        true_params = [0.3, 10]
+        fitted_params = [process._density_params[0], process._intensity_params[0]]
+
+        self.assertIterablesEqualWithTolerance(fitted_params, true_params)
+
+    def test_generate_gamma(self):
+        process = RenewalProcess(GammaDensity(init=1.5), ConstantIntensity(init=10))
+        process.set_params([1.5], [10])
+        events = process.generate_events(10)
+        process.fit(events, 10)
+
+        true_params = [1.5, 10]
+        fitted_params = [process._density_params[0], process._intensity_params[0]]
+
+        self.assertIterablesEqualWithTolerance(fitted_params, true_params)
+
+    def test_generate_inhomog_gamma(self):
+        process = RenewalProcess(GammaDensity(init=1.5), ConstantIntensity(init=1) + ExponentialDecay(init=[5, 200]))
+        process.set_params([1.5], [1, 5, 200])
+        events = process.generate_events(500)
+        process.fit(events, 500)
+
+        fitted_params = np.array([*process.density_params_, *process.intensity_params_])
+        true_params = [1.5, 1, 5, 200]
+
+        self.assertIterablesEqualWithTolerance(fitted_params, true_params, min_factor=0.7, max_factor=1.3)
+
+
+class TestMixtureProcess(FitTestCase):
     def test_mixture_density_array(self):
         process1 = RenewalProcess(PoissonDensity(), ConstantIntensity())
         process2 = RenewalProcess(PoissonDensity(), ExponentialDecay())
@@ -113,37 +186,6 @@ class TestProcesses(unittest.TestCase):
 
         for d_mix, d1, d2 in zip(d_mix_arr, d1_arr, d2_arr):
             self.assertAlmostEqual(d_mix, 0.8*d1 + 0.2*d2)
-
-    def test_poisson_mixture_fit(self):
-        events = np.loadtxt(f'{data_folder}/mixed_process_events.txt')[1:]
-
-        process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10))
-        process2 = RenewalProcess(GammaDensity(), ConstantIntensity())
-        process = MixedProcess(process1, process2)
-
-        process.fit(events, 1000)
-
-        fitted_params = np.array([*process.density_params_, *process.intensity_params_])
-        true_params = np.array([1, 0.7 / 0.3, 50, 1])
-
-        for p_fitted, p_true in zip(fitted_params, true_params):
-            self.assertTrue(p_fitted > p_true * 0.9)
-            self.assertTrue(p_fitted < p_true * 1.1)
-
-    def test_homog_invgauss_fit(self):
-        events = np.loadtxt(f'{data_folder}/homogenous_invgauss_events.txt', delimiter=',')[1:]
-
-        intensity = ConstantIntensity(init=15)
-        density = InvGaussDensity(init=0.35)
-        process = RenewalProcess(density, intensity)
-
-        process.fit(events, 1000)
-        true_params = np.array([0.3, 10])
-        fitted_params = np.array([*process.density_params_, *process.intensity_params_])
-
-        for p_fitted, p_true in zip(fitted_params, true_params):
-            self.assertTrue(p_fitted > p_true * 0.9)
-            self.assertTrue(p_fitted < p_true * 1.1)
 
 
 class TestUtils(unittest.TestCase):

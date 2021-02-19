@@ -6,6 +6,7 @@ from pointproc.intensities import *
 from pointproc.utils import concatenate
 from tqdm import tqdm
 from pointproc.utils import join_names
+from scipy.stats import invgauss
 
 
 class RenewalProcess:
@@ -26,6 +27,11 @@ class RenewalProcess:
             self._name = 'p'
         else:
             self._name = 'name'
+
+    def set_params(self, density_params, intensity_params):
+        self._density_params = density_params
+        self._intensity_params = intensity_params
+        self._fitted = True
 
     def _check_fit(self):
         if not self._fitted:
@@ -131,22 +137,37 @@ class RenewalProcess:
         int_intensity_diff = int_intensity1 - int_intensity0
         return self._density_integral(int_intensity_diff, *self._density_params)
 
+    # def generate_single_event(self, prev_event):
+    #     self._check_fit()
+    #     u = np.random.rand()
+    #     int_intensity0 = self._intensity_integral(prev_event, *self._intensity_params)
+    #
+    #     def func(t): return self._int_density_t(t, int_intensity0) - u
+    #
+    #     times = np.concatenate([[prev_event], prev_event + np.logspace(-2, 3, 20)])
+    #     eval_func = func(times)
+    #     if eval_func[-1] < 0:
+    #         raise RuntimeError('Intervals over 1000 are not possible')
+    #     signs = eval_func[:-1] * eval_func[1:]
+    #     ix = np.argwhere(signs < 0).flatten()[0]
+    #     x0 = times[ix]
+    #     x1 = times[ix+1]
+    #     res = root_scalar(func, bracket=(x0, x1))
+    #     if res.flag == 'converged':
+    #         return res.root
+    #     else:
+    #         raise RuntimeError('Failed to find root')
+
     def generate_single_event(self, prev_event):
         self._check_fit()
-        u = np.random.rand()
-        int_intensity0 = self._intensity_integral(prev_event, *self._intensity_params)
+        int_intensity0 = self._intensity_integral(prev_event, *self._intensity_params) + self.deadtime
 
-        def func(t): return self._int_density_t(t, int_intensity0) - u
+        int_intensity_diff = self.density.rvs(*self._density_params)
 
-        times = np.concatenate([[prev_event], prev_event + np.logspace(-2, 3, 20)])
-        eval_func = func(times)
-        if eval_func[-1] < 0:
-            raise RuntimeError('Intervals over 1000 are not possible')
-        signs = eval_func[:-1] * eval_func[1:]
-        ix = np.argwhere(signs < 0).flatten()[0]
-        x0 = times[ix]
-        x1 = times[ix+1]
-        res = root_scalar(func, bracket=(x0, x1))
+        def func(t): return self._intensity_integral(t, *self._intensity_params) - (int_intensity0 + int_intensity_diff)
+
+        res = root_scalar(func, x0=prev_event, x1=prev_event+1)
+
         if res.flag == 'converged':
             return res.root
         else:
@@ -195,6 +216,7 @@ class MixedProcess(RenewalProcess):
         self.intensities = [proc.intensity for proc in processes]
         self._density_params = None
         self._intensity_params = None
+        self._weights = None
         self._fitted = False
         self._n_weights = len(processes) - 1
         self._density_init = concatenate([proc.density.x0 for proc in processes])\
@@ -261,6 +283,23 @@ class MixedProcess(RenewalProcess):
         return np.concatenate([[proc.intensity.integral(t, *ps)]
                                for proc, ps in zip(self._processes, param_sets)]).T
 
+    def fit(self, events, tot_time):
+        super(MixedProcess, self).fit(events, tot_time)
+
+        d_param_sets, ratio_arr = self._split_density_params(self._density_params)
+        i_param_sets = np.split(self._intensity_params, self._param_sep_i)
+        self._weights = ratio_arr
+
+        for i, (dps, ips) in enumerate(zip(d_param_sets, i_param_sets)):
+            self._processes[i].set_params(dps, ips)
+
+    def generate_single_event(self, prev_event):
+        self._check_fit()
+        u = np.random.rand()
+        pix = np.digitize(u, np.cumsum(self._weights))
+        proc = self._processes[pix]
+        return proc.generate_single_event(prev_event)
+
     def expected_isis(self, times):
         intensities = self._intensity_func(times, *self._intensity_params)
         *param_sets, weights = np.split(self._density_params, self._param_sep_d)
@@ -280,7 +319,15 @@ if __name__ == '__main__':
 
     from scipy.stats import gamma
 
-    events = np.loadtxt('../tests/test_data/homogenous_invgauss_events.txt', delimiter=',')[1:]
-    process = RenewalProcess(InvGaussDensity(init=0.3), ConstantIntensity(init=10))
-    process.fit(events, 1000)
-    print(process.params_dict_)
+    process = RenewalProcess(GammaDensity(init=1.5), ConstantIntensity(init=1)+ExponentialDecay(init=[5,100]))
+    process.set_params([1.5], [1, 5, 100])
+    events = process.generate_events(300)
+    process.fit(events, 300)
+
+    process.params_dict_
+
+    # true_params = [1.5, 10]
+    # fitted_params = [process._density_params[0], process._intensity_params[0]]
+    #
+    # print(true_params)
+    # print(fitted_params)
