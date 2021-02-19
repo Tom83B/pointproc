@@ -72,6 +72,10 @@ class RenewalProcess:
 
         return dct
 
+    def _update_init_params(self):
+        self._density_init = self._density_params
+        self._intensity_init = self._intensity_init
+
     def _loglikelihood(self, events, tot_time, *params):
         density_params = params[:self._dnp]
         intensity_params = params[self._dnp:]
@@ -108,6 +112,7 @@ class RenewalProcess:
         if min_res.success:
             self._density_params = min_res.x[:self._dnp]
             self._intensity_params = min_res.x[self._dnp:]
+            self._update_init_params()
             self._fitted = True
         else:
             x = 5
@@ -136,27 +141,6 @@ class RenewalProcess:
         int_intensity1 = self._intensity_integral(t, *self._intensity_params)
         int_intensity_diff = int_intensity1 - int_intensity0
         return self._density_integral(int_intensity_diff, *self._density_params)
-
-    # def generate_single_event(self, prev_event):
-    #     self._check_fit()
-    #     u = np.random.rand()
-    #     int_intensity0 = self._intensity_integral(prev_event, *self._intensity_params)
-    #
-    #     def func(t): return self._int_density_t(t, int_intensity0) - u
-    #
-    #     times = np.concatenate([[prev_event], prev_event + np.logspace(-2, 3, 20)])
-    #     eval_func = func(times)
-    #     if eval_func[-1] < 0:
-    #         raise RuntimeError('Intervals over 1000 are not possible')
-    #     signs = eval_func[:-1] * eval_func[1:]
-    #     ix = np.argwhere(signs < 0).flatten()[0]
-    #     x0 = times[ix]
-    #     x1 = times[ix+1]
-    #     res = root_scalar(func, bracket=(x0, x1))
-    #     if res.flag == 'converged':
-    #         return res.root
-    #     else:
-    #         raise RuntimeError('Failed to find root')
 
     def generate_single_event(self, prev_event):
         self._check_fit()
