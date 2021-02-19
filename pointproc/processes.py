@@ -222,17 +222,18 @@ class MixedProcess(RenewalProcess):
     def params_dict_(self):
         self._check_fit()
 
-        param_sets, ratio_arr = self._split_density_params(self._density_params)
+        d_param_sets, ratio_arr = self._split_density_params(self._density_params)
+        i_param_sets = np.split(self._intensity_params, self._param_sep_i)
 
         dct = {'weights': ratio_arr}
 
-        for pname, process, ps, w in zip(self._names, self._processes, param_sets, ratio_arr):
+        for pname, process, dps, ips, w in zip(self._names, self._processes, d_param_sets, i_param_sets, ratio_arr):
             dct[pname] = {'density': {}, 'intensity': {}}
 
-            for name, val in zip(process.density.param_names, ps):
+            for name, val in zip(process.density.param_names, dps):
                 dct[pname]['density'][name] = val
 
-            for name, val in zip(process.intensity.param_names, ps):
+            for name, val in zip(process.intensity.param_names, ips):
                 dct[pname]['intensity'][name] = val
 
         return dct
