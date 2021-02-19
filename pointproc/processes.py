@@ -6,7 +6,6 @@ from pointproc.intensities import *
 from pointproc.utils import concatenate
 from tqdm import tqdm
 from pointproc.utils import join_names
-from collections import namedtuple
 
 
 class RenewalProcess:
@@ -59,10 +58,10 @@ class RenewalProcess:
         self._check_fit()
         dct = {'density': {}, 'intensity': {}}
 
-        for name, val in zip(self.density.param_names):
+        for name, val in zip(self.density.param_names, self._density_params):
             dct['density'][name] = val
 
-        for name, val in zip(self.intensity.param_names):
+        for name, val in zip(self.intensity.param_names, self._intensity_params):
             dct['intensity'][name] = val
 
         return dct
@@ -281,9 +280,7 @@ if __name__ == '__main__':
 
     from scipy.stats import gamma
 
-    p1 = RenewalProcess(GammaDensity(), ConstantIntensity())
-    p2 = RenewalProcess(GammaDensity(), ConstantIntensity())
-    p = MixedProcess(p1, p2)
-    p._fitted = True
-    p._density_params = np.array([0.5, 2, 4])
-    p._intensity_params = np.array([3.5, 3.6])
+    events = np.loadtxt('../tests/test_data/homogenous_invgauss_events.txt', delimiter=',')[1:]
+    process = RenewalProcess(InvGaussDensity(init=0.3), ConstantIntensity(init=10))
+    process.fit(events, 1000)
+    print(process.params_dict_)
