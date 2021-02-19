@@ -5,10 +5,12 @@ from pointproc.densities import *
 from pointproc.intensities import *
 from pointproc.utils import concatenate
 from tqdm import tqdm
+from pointproc.utils import join_names
+from collections import namedtuple
 
 
 class RenewalProcess:
-    def __init__(self, density, intensity, deadtime=0):
+    def __init__(self, density, intensity, deadtime=0, name=None):
         self.density = density
         self.intensity = intensity
         self._density_params = None
@@ -20,6 +22,11 @@ class RenewalProcess:
         self._density_bounds = density.bounds
         self._intensity_bounds = intensity.bounds
         self.deadtime = deadtime
+
+        if name is None:
+            self._name = 'p'
+        else:
+            self._name = 'name'
 
     def _check_fit(self):
         if not self._fitted:
@@ -46,6 +53,19 @@ class RenewalProcess:
     def intensity_params_(self):
         self._check_fit()
         return self._intensity_params
+
+    @property
+    def params_dict_(self):
+        self._check_fit()
+        dct = {'density': {}, 'intensity': {}}
+
+        for name, val in zip(self.density.param_names):
+            dct['density'][name] = val
+
+        for name, val in zip(self.intensity.param_names):
+            dct['intensity'][name] = val
+
+        return dct
 
     def _loglikelihood(self, events, tot_time, *params):
         density_params = params[:self._dnp]
@@ -190,19 +210,43 @@ class MixedProcess(RenewalProcess):
         self._param_sep_i = np.cumsum(self._param_lens_i[:-1])
         self._param_sep_d = np.cumsum(self._param_lens_d)
         self.deadtime = deadtime
+        self._names = join_names(*[[p._name] for p in processes])
 
-    def _density_func(self, intensity, int_intensity_diff, *params):
+    def _split_density_params(self, params):
         *param_sets, weights = np.split(params, self._param_sep_d)
         ratio_arr = np.array([*weights, 1])
         ratio_arr = ratio_arr / ratio_arr.sum()
+        return param_sets, ratio_arr
+
+    @property
+    def params_dict_(self):
+        self._check_fit()
+
+        param_sets, ratio_arr = self._split_density_params(self._density_params)
+
+        dct = {'weights': ratio_arr}
+
+        for pname, process, ps, w in zip(self._names, self._processes, param_sets, ratio_arr):
+            dct[pname] = {'density': {}, 'intensity': {}}
+
+            for name, val in zip(process.density.param_names, ps):
+                dct[pname]['density'][name] = val
+
+            for name, val in zip(process.intensity.param_names, ps):
+                dct[pname]['intensity'][name] = val
+
+        return dct
+
+    def _density_func(self, intensity, int_intensity_diff, *params):
+        param_sets, ratio_arr = self._split_density_params(params)
+
         return sum([q * proc.density(i, int_i, *ps)
                     for q, i, int_i, ps, proc in zip(ratio_arr, intensity.T, int_intensity_diff.T,
                                                  param_sets, self._processes)])
 
     def _density_integral(self, int_intensity_diff, *params):
-        *param_sets, weights = np.split(params, self._param_sep_d)
-        ratio_arr = np.array([*weights, 1])
-        ratio_arr = ratio_arr / ratio_arr.sum()
+        param_sets, ratio_arr = self._split_density_params(params)
+
         return sum([q * proc.density.integral(int_i, *ps)
                     for q, int_i, ps, proc in zip(ratio_arr, int_intensity_diff.T,
                                                  param_sets, self._processes)])
@@ -236,67 +280,9 @@ if __name__ == '__main__':
 
     from scipy.stats import gamma
 
-    events = np.loadtxt(f'../tests/test_data/spiketrain_response_5s.txt')[1:]
-
-    bursts = RenewalProcess(InvGaussDensity(), ExponentialDecay(init=[.1, 1])+ConstantIntensity(init=100))
-    ibis = RenewalProcess(PoissonDensity(), ExponentialDecay(init=[.1, 1])+ConstantIntensity(init=10))
-    process = MixedProcess(bursts, ibis, deadtime=0.002)
-    process.fit(events, 5)
-
-    fig, ax = plt.subplots()
-    yy = np.diff(events)
-    xx = np.arange(len(yy))
-    ax.scatter(xx, yy)
-
-    expected_bursts, expected_ibis = process.expected_isis(events[:-1])
-    ax.plot(xx, expected_bursts)
-    ax.plot(xx, expected_ibis)
-
-    plt.show()
-
-
-    # # events = np.loadtxt(f'../tests/test_data/homogenous_poisson_events_deadtime.txt')[1:]
-    # events = pd.read_csv('../../moth data/data/time-scale of SP return to baseline/tungsten/10pg/20o05001.SMR0.txt',
-    #                      sep='\t')['spike times'].values
-    # events = events[events < 900]
-    #
-    # bursts = RenewalProcess(InvGaussDensity(), ConstantIntensity(init=50))
-    # ibis = RenewalProcess(GammaDensity(), ConstantIntensity(init=0.1))
-    # spont = MixedProcess(bursts, ibis, deadtime=0.002)
-    # spont.fit(events, 900)
-    # print(spont.loglikelihood(events, 900))
-    #
-    # bursts = RenewalProcess(InvGaussDensity(), ConstantIntensity(init=50))
-    # ibis = RenewalProcess(PoissonDensity(), ConstantIntensity(init=0.1))
-    # spont = MixedProcess(bursts, ibis, deadtime=0.002)
-    # spont.fit(events, 900)
-    # print(spont.loglikelihood(events, 900))
-    #
-    # fig, ax = plt.subplots()
-    # spont.qq_plot(events, ax)
-    # ax.set_yscale('log')
-    # ax.set_xscale('log')
-    # plt.show()
-
-    # start = time.time()
-    #
-    # events = np.loadtxt('../tests/data/homogenous_invgauss_events.txt', delimiter=',')[1:]
-    #
-    # intensity = ConstantIntensity()
-    # density = InvGaussDensity()
-    # process = RenewalProcess(density, intensity)
-    #
-    # process.fit(events, 1000)
-    # true_params = np.array([0.3, 10])
-    # fitted_params = np.array([*process.density_params_, *process.intensity_params_])
-    #
-    # new_events = process.generate_events(1000)
-    #
-    # end = time.time()
-    #
-    # fig, ax = plt.subplots()
-    #
-    # process.qq_plot(new_events, ax)
-    # # ax.set_xscale('log')
-    # # ax.set_yscale('log')
-    # plt.show()
+    p1 = RenewalProcess(GammaDensity(), ConstantIntensity())
+    p2 = RenewalProcess(GammaDensity(), ConstantIntensity())
+    p = MixedProcess(p1, p2)
+    p._fitted = True
+    p._density_params = np.array([0.5, 2, 4])
+    p._intensity_params = np.array([3.5, 3.6])

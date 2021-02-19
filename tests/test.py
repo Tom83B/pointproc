@@ -3,6 +3,7 @@ from scipy import stats
 import numpy as np
 from pointproc.densities import *
 from pointproc.intensities import *
+from pointproc.utils import *
 from pointproc.processes import RenewalProcess, MixedProcess
 
 
@@ -17,6 +18,11 @@ class TestIntensities(unittest.TestCase):
         params = (1.5, 2, 5)
         expected_result = 2*np.exp(-10/5) + 1.5
         self.assertAlmostEqual(summed_intensity(10, *params), expected_result)
+
+    def test_addition_names(self):
+        intensity = ConstantIntensity() + ExponentialDecay() + ExponentialDecay()
+        expected_param_names = ('const', 'ampl1', 'tau1', 'ampl2', 'tau2')
+        self.assertTupleEqual(expected_param_names, intensity.param_names)
 
 
 class TestProcesses(unittest.TestCase):
@@ -127,8 +133,8 @@ class TestProcesses(unittest.TestCase):
     def test_homog_invgauss_fit(self):
         events = np.loadtxt(f'{data_folder}/homogenous_invgauss_events.txt', delimiter=',')[1:]
 
-        intensity = ConstantIntensity()
-        density = InvGaussDensity()
+        intensity = ConstantIntensity(init=15)
+        density = InvGaussDensity(init=0.35)
         process = RenewalProcess(density, intensity)
 
         process.fit(events, 1000)
@@ -138,6 +144,15 @@ class TestProcesses(unittest.TestCase):
         for p_fitted, p_true in zip(fitted_params, true_params):
             self.assertTrue(p_fitted > p_true * 0.9)
             self.assertTrue(p_fitted < p_true * 1.1)
+
+
+class TestUtils(unittest.TestCase):
+    def test_join_names(self):
+        nl1 = ['a', 'b', 'c']
+        nl2 = ['d', 'b', 'a']
+
+        joined = join_names(nl1, nl2)
+        self.assertListEqual(joined, ['a1', 'b1', 'c', 'd', 'b2', 'a2'])
 
 
 if __name__ == '__main__':

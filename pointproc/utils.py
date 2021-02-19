@@ -1,4 +1,5 @@
 import numpy as np
+from collections import Counter
 
 
 def piecewise_apply(func, arr, indices):
@@ -8,6 +9,7 @@ def piecewise_apply(func, arr, indices):
 
     return np.array(integrated_arr)
 
+
 def concatenate(lists):
     res = []
 
@@ -16,3 +18,27 @@ def concatenate(lists):
             res.append(x)
 
     return res
+
+
+def join_names(*a):
+    tmp = concatenate(a)
+    _counts = Counter(tmp)
+    counts = Counter(tmp)
+
+    res = []
+    for x in tmp:
+        if _counts[x] > 1:
+            i = _counts[x] - counts[x] + 1
+            res.append(str(x) + str(i))
+            counts[x] -= 1
+        else:
+            res.append(str(x))
+
+    return res
+
+
+if __name__ == '__main__':
+    nl1 = ['a', 'b', 'c']
+    nl2 = ['d', 'b', 'a']
+
+    print(join_names(nl1, nl2))

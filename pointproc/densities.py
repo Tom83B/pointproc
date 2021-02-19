@@ -3,11 +3,16 @@ from scipy.stats import gamma, invgauss
 
 
 class DensityFunction:
-    def __init__(self, function, integral, init_params, bounds):
+    def __init__(self, function, integral, init_params, bounds, param_names=None):
         self._function = function
         self._integral = integral
         self.x0 = init_params
         self.bounds = bounds
+
+        if param_names is None:
+            self.param_names = tuple('p{i+1}' for i in range(len(init_params)))
+        else:
+            self.param_names = tuple(param_names)
 
     def __call__(self, intensity, int_intensity_diff, *params):
         return self._function(intensity, int_intensity_diff, *params)
@@ -41,9 +46,10 @@ class GammaDensity(DensityFunction):
 
         def integral(int_intensity_diff, shape):
             return gamma.cdf(a=shape, x=shape*int_intensity_diff)
-            # return gammainc(shape, int_intensity_diff)
 
-        super(GammaDensity, self).__init__(function, integral, [init], [bounds])
+        param_names = ('shape',)
+
+        super(GammaDensity, self).__init__(function, integral, [init], [bounds], param_names)
 
     def average(self, intensity, shape):
         return 1 / intensity
@@ -57,7 +63,9 @@ class InvGaussDensity(DensityFunction):
         def integral(int_intensity_diff, shape):
             return invgauss.cdf(mu=shape, x=int_intensity_diff)
 
-        super(InvGaussDensity, self).__init__(function, integral, [init], [bounds])
+        param_names = ('shape',)
+
+        super(InvGaussDensity, self).__init__(function, integral, [init], [bounds], param_names)
 
     def average(self, intensity, shape):
         return shape / intensity
