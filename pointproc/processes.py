@@ -32,6 +32,7 @@ class RenewalProcess:
         self._density_params = density_params
         self._intensity_params = intensity_params
         self._fitted = True
+        self._update_init_params()
 
     def _check_fit(self):
         if not self._fitted:
@@ -76,17 +77,12 @@ class RenewalProcess:
         self._density_init = self._density_params
         self._intensity_init = self._intensity_init
 
-    def _loglikelihood(self, events, tot_time, *params):
-        density_params = params[:self._dnp]
-        intensity_params = params[self._dnp:]
-
-        events_extended = np.concatenate([[0], events, [tot_time]])
-
+    def _t_density(self, events, density_params, intensity_params):
         if self.deadtime == 0:
-            integrated_intensity = np.diff(self._intensity_integral(events_extended, *intensity_params), axis=0)
+            integrated_intensity = np.diff(self._intensity_integral(events, *intensity_params), axis=0)
         else:
-            interval_starts = events_extended[:-1] + self.deadtime
-            interval_ends = events_extended[1:]
+            interval_starts = events[:-1] + self.deadtime
+            interval_ends = events[1:]
             interval_starts[-1] = min(interval_starts[-1], interval_ends[-1])
 
             integral_starts = self._intensity_integral(interval_starts, *intensity_params)
@@ -94,10 +90,20 @@ class RenewalProcess:
 
             integrated_intensity = integral_ends - integral_starts
 
-        intensity = self._intensity_func(events, *intensity_params)
-        density = self._density_func(intensity, integrated_intensity[:-1], *density_params)
+        intensity = self._intensity_func(events[1:], *intensity_params)
+        density = self._density_func(intensity, integrated_intensity, *density_params)
 
-        n_events_factor = np.log(1 - self._density_integral(integrated_intensity[-1], *density_params))
+        return density, integrated_intensity[-1]
+
+    def _loglikelihood(self, events, tot_time, *params):
+        density_params = params[:self._dnp]
+        intensity_params = params[self._dnp:]
+
+        events_extended = np.concatenate([[0], events, [tot_time]])
+
+        density, fin_int_int = self._t_density(events_extended, density_params, intensity_params)
+
+        n_events_factor = np.log(1 - self._density_integral(fin_int_int, *density_params))
 
         logl = np.log(density).sum() + n_events_factor
         # print(logl, params)
@@ -110,16 +116,19 @@ class RenewalProcess:
 
         min_res = minimize(func, x0=x0, bounds=bounds, method='L-BFGS-B')
         if min_res.success:
-            self._density_params = min_res.x[:self._dnp]
-            self._intensity_params = min_res.x[self._dnp:]
-            self._update_init_params()
-            self._fitted = True
+            dp = min_res.x[:self._dnp]
+            ip = min_res.x[self._dnp:]
+            self.set_params(density_params=dp, intensity_params=ip)
         else:
             x = 5
             raise RuntimeError('Optimization did not terminate successfully.')
 
     def loglikelihood(self, events, tot_time):
         return self._loglikelihood(events, tot_time, *self.density_params_, *self._intensity_params)
+
+    def t_density(self, events):
+        dens, _ = self._t_density(events, self._density_params, self._intensity_params)
+        return dens
 
     def rescale(self, events):
         self._check_fit()
@@ -200,7 +209,6 @@ class MixedProcess(RenewalProcess):
         self.intensities = [proc.intensity for proc in processes]
         self._density_params = None
         self._intensity_params = None
-        self._weights = None
         self._fitted = False
         self._n_weights = len(processes) - 1
         self._density_init = concatenate([proc.density.x0 for proc in processes])\
@@ -222,6 +230,12 @@ class MixedProcess(RenewalProcess):
         ratio_arr = np.array([*weights, 1])
         ratio_arr = ratio_arr / ratio_arr.sum()
         return param_sets, ratio_arr
+
+    @property
+    def _weights(self):
+        self._check_fit()
+        _, ratio_arr = self._split_density_params(self._density_params)
+        return ratio_arr
 
     @property
     def params_dict_(self):
@@ -267,15 +281,23 @@ class MixedProcess(RenewalProcess):
         return np.concatenate([[proc.intensity.integral(t, *ps)]
                                for proc, ps in zip(self._processes, param_sets)]).T
 
-    def fit(self, events, tot_time):
-        super(MixedProcess, self).fit(events, tot_time)
+    def set_params(self, density_params, intensity_params):
+        super(MixedProcess, self).set_params(density_params, intensity_params)
 
-        d_param_sets, ratio_arr = self._split_density_params(self._density_params)
+        d_param_sets, _ = self._split_density_params(self._density_params)
         i_param_sets = np.split(self._intensity_params, self._param_sep_i)
-        self._weights = ratio_arr
 
         for i, (dps, ips) in enumerate(zip(d_param_sets, i_param_sets)):
             self._processes[i].set_params(dps, ips)
+
+    # def fit(self, events, tot_time):
+    #     super(MixedProcess, self).fit(events, tot_time)
+    #
+    #     d_param_sets, _ = self._split_density_params(self._density_params)
+    #     i_param_sets = np.split(self._intensity_params, self._param_sep_i)
+    #
+    #     for i, (dps, ips) in enumerate(zip(d_param_sets, i_param_sets)):
+    #         self._processes[i].set_params(dps, ips)
 
     def generate_single_event(self, prev_event):
         self._check_fit()
@@ -295,6 +317,18 @@ class MixedProcess(RenewalProcess):
 
         return np.array(averages)
 
+    def process_probabilities(self, events):
+        self._check_fit()
+        densities = []
+
+        for w, process in zip(self._weights, self._processes):
+            densities.append(w * process.t_density(events))
+
+        densities = np.array(densities)
+        probabilities = densities / densities.sum(axis=0)
+
+        return probabilities
+
 
 class HomogenousProcess(RenewalProcess):
     def __init__(self, density, deadtime=0, name=None):
@@ -310,17 +344,25 @@ if __name__ == '__main__':
     import numpy as np
     import pandas as pd
 
-    from scipy.stats import gamma
+    process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10))
+    process2 = RenewalProcess(PoissonDensity(), ConstantIntensity())
+    process = MixedProcess(process1, process2)
 
-    process = RenewalProcess(GammaDensity(init=1.5), ConstantIntensity(init=1)+ExponentialDecay(init=[5,100]))
-    process.set_params([1.5], [1, 5, 100])
-    events = process.generate_events(300)
-    process.fit(events, 300)
+    process.set_params(density_params=[0.7 / 0.3], intensity_params=[50, 1])
 
-    process.params_dict_
+    l1, l2 = np.array([50, 1])
+    q1, q2 = np.array([0.7, 0.3])
 
-    # true_params = [1.5, 10]
-    # fitted_params = [process._density_params[0], process._intensity_params[0]]
-    #
-    # print(true_params)
-    # print(fitted_params)
+    threshold_theory = - np.log((q2*l2) / (q1*l1)) / (l1 - l2)
+
+    isi1, isi2 = threshold_theory / 2, threshold_theory * 1
+    events = np.array([0, isi1, isi2]).cumsum()
+    isis = np.diff(events)
+
+    dens1 = q1 * l1 * np.exp(-l1 * isis)
+    dens2 = q2 * l2 * np.exp(-l2 * isis)
+    probs_theory = dens1 / (dens1 + dens2)
+    probs_test = process.process_probabilities(events)[0]
+
+    print(probs_theory)
+    print(probs_test)

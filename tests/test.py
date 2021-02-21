@@ -11,6 +11,7 @@ data_folder = 'test_data'
 
 
 class TestIntensities(unittest.TestCase):
+    # use numpy.testing.assert_allclose instead
     def test_addition(self):
         intensity1 = ConstantIntensity()
         intensity2 = ExponentialDecay()
@@ -107,20 +108,6 @@ class TestRenewalProcess(FitTestCase):
 
         self.assertAlmostEqual(d_mix, 0.8*d1 + 0.2*d2)
 
-    def test_poisson_mixture_fit(self):
-        events = np.loadtxt(f'{data_folder}/mixed_process_events.txt')[1:]
-
-        process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10))
-        process2 = RenewalProcess(GammaDensity(), ConstantIntensity())
-        process = MixedProcess(process1, process2)
-
-        process.fit(events, 1000)
-
-        fitted_params = np.array([*process.density_params_, *process.intensity_params_])
-        true_params = np.array([1, 0.7 / 0.3, 50, 1])
-
-        self.assertIterablesEqualWithTolerance(fitted_params, true_params)
-
     def test_homog_invgauss_fit(self):
         events = np.loadtxt(f'{data_folder}/homogenous_invgauss_events.txt', delimiter=',')[1:]
 
@@ -186,6 +173,42 @@ class TestMixtureProcess(FitTestCase):
 
         for d_mix, d1, d2 in zip(d_mix_arr, d1_arr, d2_arr):
             self.assertAlmostEqual(d_mix, 0.8*d1 + 0.2*d2)
+
+    def test_poisson_mixture_fit(self):
+        events = np.loadtxt(f'{data_folder}/mixed_process_events.txt')[1:]
+
+        process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10))
+        process2 = RenewalProcess(GammaDensity(), ConstantIntensity())
+        process = MixedProcess(process1, process2)
+
+        process.fit(events, 1000)
+
+        fitted_params = np.array([*process.density_params_, *process.intensity_params_])
+        true_params = np.array([1, 0.7 / 0.3, 50, 1])
+
+        self.assertIterablesEqualWithTolerance(fitted_params, true_params)
+
+    def test_process_probability(self):
+        process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10))
+        process2 = RenewalProcess(PoissonDensity(), ConstantIntensity())
+        process = MixedProcess(process1, process2)
+
+        process.set_params(density_params=[0.7 / 0.3], intensity_params=[50, 1])
+
+        l1, l2 = np.array([50, 1])
+        q1, q2 = np.array([0.7, 0.3])
+
+        threshold_theory = - np.log((q2 * l2) / (q1 * l1)) / (l1 - l2)
+
+        isi1, isi2 = threshold_theory / 2, threshold_theory * 1
+        events = np.array([0, isi1, isi2]).cumsum()
+        isis = np.diff(events)
+
+        dens1 = q1 * l1 * np.exp(-l1 * isis)
+        dens2 = q2 * l2 * np.exp(-l2 * isis)
+        probs_theory = dens1 / (dens1 + dens2)
+        probs_test = process.process_probabilities(events)[0]
+        np.testing.assert_almost_equal(probs_theory, probs_test)
 
 
 class TestUtils(unittest.TestCase):
