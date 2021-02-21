@@ -26,7 +26,7 @@ class RenewalProcess:
         if name is None:
             self._name = 'p'
         else:
-            self._name = 'name'
+            self._name = name
 
     def set_params(self, density_params, intensity_params):
         self._density_params = density_params
@@ -294,6 +294,15 @@ class MixedProcess(RenewalProcess):
             averages.append(proc.density.average(i, *ps) + self.deadtime)
 
         return np.array(averages)
+
+
+class HomogenousProcess(RenewalProcess):
+    def __init__(self, density, deadtime=0, name=None):
+        intensity = ConstantIntensity()
+        super(HomogenousProcess, self).__init__(density, intensity, deadtime, name)
+
+    def generate_single_event(self, prev_event):
+        return self.density.rvs(*self._density_params) / self._intensity_params[0]
 
 
 if __name__ == '__main__':
