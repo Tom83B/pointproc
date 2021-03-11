@@ -4,7 +4,7 @@ import numpy as np
 from pointproc.densities import *
 from pointproc.intensities import *
 from pointproc.utils import *
-from pointproc.processes import RenewalProcess, MixedProcess
+from pointproc.processes import RenewalProcess, MixedProcess, TriphasicResponse
 
 
 data_folder = 'test_data'
@@ -209,6 +209,24 @@ class TestMixtureProcess(FitTestCase):
         probs_theory = dens1 / (dens1 + dens2)
         probs_test = process.process_probabilities(events)[0]
         np.testing.assert_almost_equal(probs_theory, probs_test)
+
+
+class TestTriphasic(FitTestCase):
+    def test_poisson_changepoint(self):
+        data_folder = '../tests/test_data'
+
+        events = np.loadtxt(f'{data_folder}/triphasic_response_poisson.txt', delimiter=',')[1:]
+        process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=50))
+        process2 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=2))
+
+        tri = TriphasicResponse(process1, process2)
+        tri.fit(events, tot_time=1020, resp_end_range=(8, 12))
+
+        last1 = events[events <= 10].max()
+        first2 = events[events > 10].min()
+
+        self.assertGreater(tri.sep_time, last1)
+        self.assertLess(tri.sep_time, first2)
 
 
 class TestUtils(unittest.TestCase):

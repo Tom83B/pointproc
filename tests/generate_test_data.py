@@ -78,6 +78,11 @@ if __name__ == '__main__':
     # homogenous_invgauss_events = generate_invgauss_homog(10, 0.3, 1000)
     # np.savetxt('test_data/homogenous_invgauss_events.txt', homogenous_invgauss_events, delimiter=',')
 
-    homogenous_poisson_events = generate_homogenous_poisson(10, 1000, 0.2)
-    np.savetxt('test_data/homogenous_poisson_events_deadtime.txt', homogenous_poisson_events, delimiter=',')
+    # homogenous_poisson_events = generate_homogenous_poisson(10, 1000, 0.2)
+    # np.savetxt('test_data/homogenous_poisson_events_deadtime.txt', homogenous_poisson_events, delimiter=',')
+
+    events1 = generate_homogenous_poisson(50, 10)
+    events2 = generate_homogenous_poisson(2, 1000)[1:] + 10
+    triphasic_response = np.concatenate((events1, events2))
+    np.savetxt('test_data/triphasic_response_poisson.txt', triphasic_response, delimiter=',')
 

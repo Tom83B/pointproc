@@ -106,8 +106,11 @@ class RenewalProcess:
         n_events_factor = np.log(1 - self._density_integral(fin_int_int, *density_params))
 
         logl = np.log(density).sum() + n_events_factor
-        # print(logl, params)
-        return logl
+
+        if np.isfinite(logl):
+            return logl
+        else:
+            return logl
 
     def fit(self, events, tot_time):
         def func(x): return -self._loglikelihood(events, tot_time, *x)
@@ -115,12 +118,14 @@ class RenewalProcess:
         bounds = [*self._density_bounds, *self._intensity_bounds]
 
         min_res = minimize(func, x0=x0, bounds=bounds, method='L-BFGS-B')
+        if min_res.message == b'ABNORMAL_TERMINATION_IN_LNSRCH':
+            min_res = minimize(lambda x: func(x)*1000, x0=x0, bounds=bounds, method='L-BFGS-B')
         if min_res.success:
             dp = min_res.x[:self._dnp]
             ip = min_res.x[self._dnp:]
             self.set_params(density_params=dp, intensity_params=ip)
+            self._update_init_params()
         else:
-            x = 5
             raise RuntimeError('Optimization did not terminate successfully.')
 
     def loglikelihood(self, events, tot_time):
@@ -331,38 +336,66 @@ class MixedProcess(RenewalProcess):
 
 
 class HomogenousProcess(RenewalProcess):
-    def __init__(self, density, deadtime=0, name=None):
-        intensity = ConstantIntensity()
+    def __init__(self, density, deadtime=0, name=None, init_intensity=None, bounds_intensity=None):
+        intensity = ConstantIntensity(init_intensity, bounds_intensity)
         super(HomogenousProcess, self).__init__(density, intensity, deadtime, name)
 
     def generate_single_event(self, prev_event):
         return self.density.rvs(*self._density_params) / self._intensity_params[0]
 
 
+class TriphasicResponse:
+    def __init__(self, process1: RenewalProcess, process2: RenewalProcess):
+        self.process1 = process1
+        self.process2 = process2
+        self.sep_time = None
+
+    def fit(self, events, tot_time, resp_end_range):
+        resp_end_mask = (events >= resp_end_range[0]) & (events < resp_end_range[1])
+        resp_end_ixs = np.nonzero(resp_end_mask)[0]
+
+        loglikelihoods = []
+        params_list1 = []
+        params_list2 = []
+
+        for ix in resp_end_ixs:
+            events1 = events[:ix]
+            events2 = events[ix:] - events[ix]
+            self.process1.fit(events1, events1.max())
+            self.process2.fit(events2, tot_time - events[ix])
+            ll1 = self.process1.loglikelihood(events1, events1.max())
+            ll2 = self.process2.loglikelihood(events2, tot_time - events[ix])
+            loglikelihoods.append(ll1+ll2)
+            params_list1.append((self.process1.density_params_, self.process1.intensity_params_))
+            params_list2.append((self.process2.density_params_, self.process2.intensity_params_))
+
+        best_sep_ix = np.argmax(loglikelihoods)
+        event_ix = resp_end_ixs[best_sep_ix]
+        self.sep_time = (events[event_ix-1] + events[event_ix]) / 2
+        self.process1.set_params(*params_list1[best_sep_ix])
+        self.process2.set_params(*params_list2[best_sep_ix])
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import numpy as np
     import pandas as pd
 
-    process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=10))
-    process2 = RenewalProcess(PoissonDensity(), ConstantIntensity())
-    process = MixedProcess(process1, process2)
+    data_folder = '../tests/test_data'
 
-    process.set_params(density_params=[0.7 / 0.3], intensity_params=[50, 1])
+    events = np.loadtxt(f'{data_folder}/triphasic_response_poisson.txt', delimiter=',')[1:]
+    process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=50))
+    process2 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=2))
 
-    l1, l2 = np.array([50, 1])
-    q1, q2 = np.array([0.7, 0.3])
+    tri = TriphasicResponse(process1, process2)
+    tri.fit(events, tot_time=1020, resp_end_range=(8, 12))
 
-    threshold_theory = - np.log((q2*l2) / (q1*l1)) / (l1 - l2)
+    # events = np.loadtxt(f'{data_folder}/homogenous_poisson_events.txt', delimiter=',')[1:] + 100
+    #
+    # intensity = Heaviside(init=0, bounds=(0, events[0]))*ConstantIntensity(1.5, [0.1, 10])
+    # density = PoissonDensity()
+    # process = RenewalProcess(density, intensity)
+    #
+    # process.fit(events, 1000+100)
 
-    isi1, isi2 = threshold_theory / 2, threshold_theory * 1
-    events = np.array([0, isi1, isi2]).cumsum()
-    isis = np.diff(events)
-
-    dens1 = q1 * l1 * np.exp(-l1 * isis)
-    dens2 = q2 * l2 * np.exp(-l2 * isis)
-    probs_theory = dens1 / (dens1 + dens2)
-    probs_test = process.process_probabilities(events)[0]
-
-    print(probs_theory)
-    print(probs_test)
+    # self.assertTrue(process.intensity_params_[0] > 0.9)
+    # self.assertTrue(process.intensity_params_[0] < 1.1)
