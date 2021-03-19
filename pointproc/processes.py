@@ -126,7 +126,7 @@ class RenewalProcess:
             self.set_params(density_params=dp, intensity_params=ip)
             self._update_init_params()
         else:
-            raise RuntimeError('Optimization did not terminate successfully.')
+            raise RuntimeError(f'Optimization did not terminate successfully: {min_res.message}')
 
     def loglikelihood(self, events, tot_time):
         return self._loglikelihood(events, tot_time, *self.density_params_, *self._intensity_params)
