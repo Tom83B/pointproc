@@ -75,7 +75,7 @@ class RenewalProcess:
 
     def _update_init_params(self):
         self._density_init = self._density_params
-        self._intensity_init = self._intensity_init
+        self._intensity_init = self._intensity_params
 
     def _t_density(self, events, density_params, intensity_params):
         if self.deadtime == 0:
@@ -360,14 +360,19 @@ class TriphasicResponse:
 
         for ix in resp_end_ixs:
             events1 = events[:ix]
-            events2 = events[ix:] - events[ix]
-            self.process1.fit(events1, events1.max())
-            self.process2.fit(events2, tot_time - events[ix])
-            ll1 = self.process1.loglikelihood(events1, events1.max())
-            ll2 = self.process2.loglikelihood(events2, tot_time - events[ix])
-            loglikelihoods.append(ll1+ll2)
-            params_list1.append((self.process1.density_params_, self.process1.intensity_params_))
-            params_list2.append((self.process2.density_params_, self.process2.intensity_params_))
+            events2 = (events[ix:] - events[ix])[1:]
+            try:
+                self.process1.fit(events1[:-1], events1[-1])
+                self.process2.fit(events2[:-1], tot_time - events[ix])
+                ll1 = self.process1.loglikelihood(events1[:-1], events1[-1])
+                ll2 = self.process2.loglikelihood(events2[:-1], tot_time - events[ix])
+                loglikelihoods.append(ll1+ll2)
+                params_list1.append((self.process1.density_params_, self.process1.intensity_params_))
+                params_list2.append((self.process2.density_params_, self.process2.intensity_params_))
+            except:
+                loglikelihoods.append(-np.inf)
+                params_list1.append(None)
+                params_list2.append(None)
 
         best_sep_ix = np.argmax(loglikelihoods)
         event_ix = resp_end_ixs[best_sep_ix]
@@ -382,12 +387,29 @@ if __name__ == '__main__':
 
     data_folder = '../tests/test_data'
 
-    events = np.loadtxt(f'{data_folder}/triphasic_response_poisson.txt', delimiter=',')[1:]
-    process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=50))
-    process2 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=2))
+    events = np.loadtxt(f'{data_folder}/spiketrain_response_5s_with_rebound.txt', delimiter=',')
+    events = (events - events[0])[1:]
 
-    tri = TriphasicResponse(process1, process2)
-    tri.fit(events, tot_time=1020, resp_end_range=(8, 12))
+    bursts = RenewalProcess(InvGaussDensity(), ExponentialDecay(init=[100, 1]) + ExponentialDecay(
+        init=[10, 0.1]) + ConstantIntensity(init=100))
+    ibis = RenewalProcess(GammaDensity(), ExponentialDecay(init=[100, 1]) + ExponentialDecay(
+        init=[10, 0.1]) + ConstantIntensity(init=10))
+    stimulus = MixedProcess(bursts, ibis, deadtime=2e-3)
+
+    bursts = RenewalProcess(InvGaussDensity(), ExponentialDecay(init=[1, 150]) + ExponentialDecay(
+        init=[1, 50]) + ConstantIntensity(init=1))
+    ibis = RenewalProcess(GammaDensity(), ExponentialDecay(init=[1, 150]) + ExponentialDecay(
+        init=[1, 50]) + ConstantIntensity(init=50))
+    rebound = MixedProcess(bursts, ibis, deadtime=4e-3)
+
+    tri = TriphasicResponse(stimulus, rebound)
+    tri.fit(events, tot_time=events.max(), resp_end_range=(5, 10))
+
+    # process1 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=50))
+    # process2 = RenewalProcess(PoissonDensity(), ConstantIntensity(init=2))
+    #
+    # tri = TriphasicResponse(process1, process2)
+    # tri.fit(events, tot_time=1020, resp_end_range=(8, 12))
 
     # events = np.loadtxt(f'{data_folder}/homogenous_poisson_events.txt', delimiter=',')[1:] + 100
     #
